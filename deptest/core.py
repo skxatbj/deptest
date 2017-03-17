@@ -115,6 +115,8 @@ class ModuleRunner(object):
         states = defaultdict(get_state)
         self.states = states
         self._dispatch(self.entries_to_run, states)
+        if self.module_teardown:
+            self.run_teardown(self.module_teardown, states)
 
     def _dispatch(self, entries, states):
         lg.debug('_dispatch')
@@ -142,6 +144,12 @@ class ModuleRunner(object):
         state = states[entry]
         entry_runner = EntryRunner(entry, state, self)
         entry_runner.run()
+
+    def run_teardown(self, entry, states):
+        lg.debug('run teardown %s', entry)
+        state = states[entry]
+        teardown_runner = TeardownRunner(entry, state, self)
+        teardown_runner.run()
 
     def __str__(self):
         return '<ModuleRunner: {}>'.format(self.module.__name__)
@@ -493,3 +501,31 @@ def main():
         runner.dispatch()
 
     log_summary(runners)
+
+
+class TeardownRunner(EntryRunner):
+    def run(self):
+        entry = self.entry
+        state = self.state
+
+        if state['unmet']:
+            lg.debug('%s UNMET, skip run', entry.__name__)
+            self.log_state()
+            return
+
+        self.before()
+
+        try:
+            entry()
+        except:
+            state['traceback'] = traceback.format_exc()
+            state['ok'] = False
+        else:
+            state['ok'] = True
+        finally:
+            state['executed'] = True
+
+        self.after()
+
+        # log state
+        self.log_state()
